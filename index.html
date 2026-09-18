@@ -400,9 +400,16 @@
       }
       idleState.classList.add('hidden');
 
+      // Multi-word search: every searched word must appear somewhere in the
+      // member's name, regardless of order. This means "kaushal dave"
+      // matches both "KAUSHAL HEMANTKUMAR DAVE" and
+      // "KAUSHAL JAYESHBHAI DAVE".
+      const searchWords = q.split(/\s+/).filter(Boolean);
+
       const hits = [];
       for (const entry of index) {
-        if (entry.lower.includes(q)) {
+        const matchesAllWords = searchWords.every(word => entry.lower.includes(word));
+        if (matchesAllWords) {
           hits.push(entry.row);
           if (hits.length >= MAX_RESULTS) break;
         }
