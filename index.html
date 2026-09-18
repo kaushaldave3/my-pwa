@@ -297,10 +297,76 @@
     const toast       = document.getElementById('toast');
     const toastText   = document.getElementById('toastText');
 
-    // Case-insensitive substring match on `name`, pre-indexed to lowercase
-    // once so every keystroke only does cheap string scans.
-    const index = lockedDatabase.map(r => ({ row: r, lower: r.name.toLowerCase() }));
+    // Smart/fuzzy name index. Names are normalized once so searches can
+    // tolerate extra spaces, punctuation, word order, and small typos.
+    const normalizeSearchText = value =>
+      String(value || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const index = lockedDatabase.map(r => {
+      const normalized = normalizeSearchText(r.name);
+      return {
+        row: r,
+        lower: normalized,
+        words: normalized.split(' ').filter(Boolean)
+      };
+    });
     const MAX_RESULTS = 60; // keep the viewport fast; refine typing to narrow
+
+    // Levenshtein distance for typo-tolerant matching.
+    function editDistance(a, b) {
+      if (a === b) return 0;
+      if (!a) return b.length;
+      if (!b) return a.length;
+
+      // Keep the shorter string in the inner array for lower memory use.
+      if (a.length > b.length) [a, b] = [b, a];
+      let previous = Array.from({ length: a.length + 1 }, (_, i) => i);
+
+      for (let j = 1; j <= b.length; j++) {
+        const current = [j];
+        for (let i = 1; i <= a.length; i++) {
+          const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+          current[i] = Math.min(
+            current[i - 1] + 1,
+            previous[i] + 1,
+            previous[i - 1] + cost
+          );
+        }
+        previous = current;
+      }
+      return previous[a.length];
+    }
+
+    function fuzzyWordMatch(queryWord, nameWords) {
+      if (!queryWord) return { matched: true, score: 0 };
+
+      let best = Infinity;
+      for (const nameWord of nameWords) {
+        // Normal substring/prefix matches should rank ahead of fuzzy matches.
+        if (nameWord.includes(queryWord)) {
+          const score = queryWord === nameWord ? 0 : 0.1;
+          best = Math.min(best, score);
+          continue;
+        }
+
+        // Only allow a small edit distance. This prevents short searches from
+        // matching unrelated names while still fixing common typing mistakes.
+        const maxDistance = queryWord.length <= 4 ? 1 : queryWord.length <= 7 ? 2 : 2;
+        const distance = editDistance(queryWord, nameWord);
+        if (distance <= maxDistance) {
+          const score = 1 + distance / Math.max(queryWord.length, nameWord.length);
+          best = Math.min(best, score);
+        }
+      }
+
+      return best < Infinity ? { matched: true, score: best } : { matched: false, score: Infinity };
+    }
 
     let toastTimer = null;
     function showToast(msg) {
@@ -388,7 +454,8 @@
     }
 
     function runSearch() {
-      const q = searchInput.value.trim().toLowerCase();
+      const q = normalizeSearchText(searchInput.value);
+      const searchWords = q.split(' ').filter(Boolean);
       clearBtn.classList.toggle('hidden', q.length === 0);
 
       resultsEl.textContent = '';
@@ -400,20 +467,32 @@
       }
       idleState.classList.add('hidden');
 
-      // Multi-word search: every searched word must appear somewhere in the
-      // member's name, regardless of order. This means "kaushal dave"
-      // matches both "KAUSHAL HEMANTKUMAR DAVE" and
-      // "KAUSHAL JAYESHBHAI DAVE".
-      const searchWords = q.split(/\s+/).filter(Boolean);
-
-      const hits = [];
+      // Every search word must match somewhere in the name, but words can
+      // appear in any order. Results are ranked by match quality.
+      const ranked = [];
       for (const entry of index) {
-        const matchesAllWords = searchWords.every(word => entry.lower.includes(word));
-        if (matchesAllWords) {
-          hits.push(entry.row);
-          if (hits.length >= MAX_RESULTS) break;
+        let totalScore = 0;
+        let matched = true;
+
+        for (let i = 0; i < searchWords.length; i++) {
+          const word = searchWords[i];
+          // The first search word must match the FIRST NAME (the first
+          // word in the member name). This prevents "vijay" from
+          // returning names such as "JAY VIJAY PARMAR".
+          const candidateWords = i === 0 ? entry.words.slice(0, 1) : entry.words;
+          const result = fuzzyWordMatch(word, candidateWords);
+          if (!result.matched) {
+            matched = false;
+            break;
+          }
+          totalScore += result.score;
         }
+
+        if (matched) ranked.push({ row: entry.row, score: totalScore });
       }
+
+      ranked.sort((a, b) => a.score - b.score || a.row.name.localeCompare(b.row.name));
+      const hits = ranked.slice(0, MAX_RESULTS).map(item => item.row);
 
       if (hits.length === 0) {
         noResults.classList.remove('hidden');
