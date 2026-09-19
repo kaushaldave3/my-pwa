@@ -365,10 +365,19 @@
 
       let best = Infinity;
       for (const nameWord of nameWords) {
-        // Normal substring/prefix matches should rank ahead of fuzzy matches.
+        // Rank matches by relevance:
+        // 1) exact word, 2) starts with the searched text,
+        // 3) contains the searched text, 4) fuzzy/typo match.
+        if (nameWord === queryWord) {
+          best = Math.min(best, 0);
+          continue;
+        }
+        if (nameWord.startsWith(queryWord)) {
+          best = Math.min(best, 0.1);
+          continue;
+        }
         if (nameWord.includes(queryWord)) {
-          const score = queryWord === nameWord ? 0 : 0.1;
-          best = Math.min(best, score);
+          best = Math.min(best, 0.25);
           continue;
         }
 
