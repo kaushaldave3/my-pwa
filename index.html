@@ -476,8 +476,12 @@
       clearAccountBtn.classList.toggle('hidden', accountQ.length === 0);
       if (accountQ.length > 0) {
         idleState.classList.add('hidden');
+        // Account IDs are six digits. Allow users to omit leading zeros
+        // (e.g. "9456" matches exactly "009456"), but never match another ID
+        // that merely contains those digits.
+        const normalizedAccountQ = accountQ.replace(/\D/g, '').padStart(6, '0');
         const hits = index
-          .filter(entry => String(entry.row.acct_cd || '').toLowerCase().includes(accountQ))
+          .filter(entry => String(entry.row.acct_cd || '').replace(/\D/g, '') === normalizedAccountQ)
           .slice(0, MAX_RESULTS)
           .map(entry => entry.row);
 
