@@ -101,10 +101,25 @@
           autocomplete="off"
           autocapitalize="characters"
           spellcheck="false"
-          placeholder="Type a name…"
+          placeholder="Search by member name…"
           class="w-full h-14 pl-11 pr-11 rounded-2xl bg-white text-slate-900 placeholder-slate-400 shadow-md ring-0 focus:ring-2 focus:ring-teal-300 outline-none text-base font-medium transition"
         />
         <button id="clearBtn" type="button" aria-label="Clear search"
+          class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18" /></svg>
+        </button>
+      </div>
+
+      <div class="my-2 text-center text-xs font-semibold text-teal-100/80">OR</div>
+
+      <div class="relative">
+        <svg class="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 4h6m-7 3h8m-9 3h10m-9 3h8m-6 3h4" />
+        </svg>
+        <input id="accountInput" type="search" inputmode="numeric" autocomplete="off"
+          spellcheck="false" placeholder="Search by Account ID…"
+          class="w-full h-14 pl-11 pr-11 rounded-2xl bg-white text-slate-900 placeholder-slate-400 shadow-md ring-0 focus:ring-2 focus:ring-teal-300 outline-none text-base font-medium transition" />
+        <button id="clearAccountBtn" type="button" aria-label="Clear account ID search"
           class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18" /></svg>
         </button>
@@ -287,7 +302,9 @@
 
     /* ---------- Search & filter engine ---------- */
     const searchInput = document.getElementById('searchInput');
+    const accountInput = document.getElementById('accountInput');
     const searchBtn   = document.getElementById('searchBtn');
+    const clearAccountBtn = document.getElementById('clearAccountBtn');
     const clearBtn    = document.getElementById('clearBtn');
     const idleState   = document.getElementById('idleState');
     const noResults   = document.getElementById('noResults');
@@ -455,6 +472,29 @@
 
     function runSearch() {
       const q = normalizeSearchText(searchInput.value);
+      const accountQ = String(accountInput.value || '').trim().toLowerCase();
+      clearAccountBtn.classList.toggle('hidden', accountQ.length === 0);
+      if (accountQ.length > 0) {
+        idleState.classList.add('hidden');
+        const hits = index
+          .filter(entry => String(entry.row.acct_cd || '').toLowerCase().includes(accountQ))
+          .slice(0, MAX_RESULTS)
+          .map(entry => entry.row);
+
+        if (hits.length === 0) {
+          noResults.classList.remove('hidden');
+          resultCount.classList.add('hidden');
+          return;
+        }
+        noResults.classList.add('hidden');
+        resultCount.textContent = hits.length + (hits.length === 1 ? ' record' : ' records');
+        resultCount.classList.remove('hidden');
+        const frag = document.createDocumentFragment();
+        hits.forEach(r => frag.appendChild(renderCard(r)));
+        resultsEl.appendChild(frag);
+        return;
+      }
+
       const searchWords = q.split(' ').filter(Boolean);
       clearBtn.classList.toggle('hidden', q.length === 0);
 
@@ -509,12 +549,19 @@
     }
 
     searchInput.addEventListener('input', runSearch);
-    searchBtn.addEventListener('click', () => { runSearch(); searchInput.blur(); });
+    accountInput.addEventListener('input', runSearch);
+    searchBtn.addEventListener('click', () => { runSearch(); searchInput.blur(); accountInput.blur(); });
     searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') { runSearch(); searchInput.blur(); } });
+    accountInput.addEventListener('keydown', e => { if (e.key === 'Enter') { runSearch(); accountInput.blur(); } });
     clearBtn.addEventListener('click', () => {
       searchInput.value = '';
       runSearch();
       searchInput.focus();
+    });
+    clearAccountBtn.addEventListener('click', () => {
+      accountInput.value = '';
+      runSearch();
+      accountInput.focus();
     });
   </script>
 </body>
